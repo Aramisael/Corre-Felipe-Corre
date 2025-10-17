@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CORRE FELIPE CORRE!!!</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Bangers&display=swap" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900;500;900&display=swap');
+        
+        /* 1. Dimensiones y Colores Generales */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1f2937; 
+            color: #ffffff;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh; 
+            overflow: hidden;
+            touch-action: manipulation;
+        }
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            max-width: 600px;
+            max-height: 800px;
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.5);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 8px solid #FF9800;
+        }
+        #game-canvas {
+            display: block;
+            background-color: #303C4B;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* 2. Estilos de UI y Componentes */
+        .ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: all;
+            cursor: pointer;
+        }
+
+        /* HUD Minimalista */
+        #game-hud {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            right: 15px; 
+            z-index: 5;
+            font-size: 1.5rem; 
+            font-weight: 700;
+            color: #FFC107; 
+            text-shadow: 2px 2px 3px rgba(0, 0, 0, 0.8); 
+            display: flex;
+            justify-content: space-between; 
+            align-items: center;
+        }
+        
+        /* Mensaje Box - Pantallas de Caja 1 y Caja 3 */
+        #message-box {
+            position: absolute; 
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(48, 60, 75, 0.95); 
+            padding: 30px 50px;
+            border-radius: 16px;
+            text-align: center;
+            z-index: 20; 
+            box-shadow: 0 0 30px rgba(255, 152, 0, 0.8);
+            border: 4px solid #FF9800;
+            max-width: 90vw;
+        }
+        
+        /* Estilo de título de cómic (Onomatopeya) - USANDO BANGERS */
+        .comic-title {
+            font-family: 'Bangers', cursive;
+            font-size: 3.5rem; /* Adaptado para caber mejor */
+            font-weight: 900;
+            color: #FFC107; 
+            text-shadow: -4px -4px 0 #303C4B, 
+                         4px -4px 0 #303C4B, 
+                         -4px 4px 0 #303C4B, 
+                         4px 4px 0 #303C4B,
+                         6px 6px 0px #000; 
+            letter-spacing: 2px;
+            margin-bottom: 20px;
+            line-height: 1.2;
+            padding: 5px 10px;
+            display: block; 
+        }
+        
+        .start-button {
+            padding: 15px 30px;
+            margin-top: 20px;
+            background-color: #FFC107; 
+            color: #333333;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 900;
+            text-transform: uppercase;
+            box-shadow: 0 5px #E0A800;
+            transition: all 0.1s;
+        }
+        .start-button:active {
+            transform: translateY(2px);
+            box-shadow: 0 3px #E0A800;
+            background-color: #E0A800;
+        }
+        
+        /* Mensaje de apoyo para salto */
+        .subtitle-tip {
+            color: #e0e0e0;
+            background-color: #333;
+            width: 100%;
+            padding: 5px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <!-- El canvas es donde se dibuja el juego -->
+        <canvas id="game-canvas"></canvas>
+
+        <!-- Área para el salto (Caja 2) -->
+        <div id="jump-area" class="ui-overlay"></div>
+
+        <!-- Información de Puntaje (Minimalista) -->
+        <div id="game-hud" class="hidden">
+            <!-- Puntos de Salto y Vidas (Izquierda) -->
+            <span id="jump-points-display">📦 x 0 | 💩💩💩</span>
+            <!-- Puntuación (Derecha) -->
+            <span id="score-display">💰 0</span>
+        </div>
+    </div>
+
+    <!-- Mensaje de inicio/Game Over: Cajas 1 y 3 -->
+    <div id="message-box" class="message-box hidden">
+        <h2 id="message-text" class="comic-title text-center"></h2>
+        <!-- Eliminado texto extra según solicitud -->
+        <button id="start-game-button" class="start-button hidden"></button>
+    </div>
+
+    <p class="mt-4 text-sm subtitle-tip">Toca en cualquier parte para SALTAR.</p>
+
+    <script>
+        // --- Configuraciones de Firebase (Necesarias pero no usadas en este juego simple) ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // --- Fin Configuraciones de Firebase ---
+
+        // --- ESTADOS DEL JUEGO (Cajas) ---
+        const GAME_STATE = {
+            MENU: 'MENU',       // Caja 1
+            RUNNING: 'RUNNING', // Caja 2
+            GAMEOVER: 'GAMEOVER'// Caja 3
+        };
+        let gameState = GAME_STATE.MENU; 
+
+        // --- REFERENCIAS DEL DOM ---
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const messageBox = document.getElementById('message-box');
+        const messageText = document.getElementById('message-text');
+        const startGameButton = document.getElementById('start-game-button');
+        const jumpPointsDisplay = document.getElementById('jump-points-display');
+        const scoreDisplay = document.getElementById('score-display'); 
+        const gameHud = document.getElementById('game-hud'); 
+        
+        // --- CONSTANTES DE FÍSICA Y JUEGO ---
+        const FLOOR_Y = 60;
+        const GRAVITY_BASE = 0.0075;      
+        const JUMP_VELOCITY_BASE = -1.8; 
+        const BASE_SPEED = 0.4225;         
+        const SPEED_INCREMENT_FACTOR = 0.005; 
+        
+        // --- LÓGICA DE VIDAS Y PRESIÓN ---
+        const MAX_LIVES = 3; 
+        const LIFE_EMOJI = '💩'; 
+        const LIVES_REQUIRED_FOR_BONUS = 3; 
+        
+        // --- CONSTANTES DE PERSONAJES ---
+        const JEFE_CATCH_POSITION = 270; 
+        const JEFE_WIDTH = 110;
+        const JEFE_HEIGHT = 90;
+        const OPERARIO_WIDTH = 60; 
+        const OPERARIO_HEIGHT = 100;
+        const OPERARIO_COLLISION_HEIGHT = 70; 
+
+        // --- CONSTANTES DE ONOMATOPEYA ---
+        const SUCCESS_DIALOGS = ['FELIPEE!!!', 'ROMPO ORTOS!!!', 'COCKY!!'];
+        const FAILURE_DIALOG = 'HECTOR @@#$!!!';
+        const LIFE_GAIN_DIALOG = '¡VIDA RECUPERADA!'; // Mensaje único para la vida
+        const DIALOG_DURATION_FRAMES = 50; 
+        const DIALOG_TYPE = {
+            SUCCESS: 'SUCCESS',
+            FAILURE: 'FAILURE',
+            LIFE_GAIN: 'LIFE_GAIN'
+        };
+
+        // CONSTANTES DE PUNTUACIÓN Y VELOCIDAD
+        const SCORE_REWARD = 10;
+        // Aumento de velocidad cada 50 puntos
+        const SCORE_BOOST_THRESHOLD = 50; 
+        // Aumentar nivel de velocidad en 12.0
+        const SPEED_LEVEL_INCREASE = 12.0; 
+        // Límite de velocidad duplicado a 100
+        const MAX_SPEED_LEVEL = 100; 
+
+        // CONSTANTES DE OBJETOS
+        const OBSTACLE_COLLISION_WIDTH = 25; 
+        const OBSTACLE_COLLISION_HEIGHT = 30;
+        const EMOJI_OBSTACLES = ['\uD83D\uDCE6', '\uD83D\uDDD1\uFE0F', '\uD83E\uDED4', '\uD83D\uDDA8\uFE0F', '\uD83D\uDEBD']; 
+        const INITIAL_SPAWN_DELAY_FRAMES = 180;
+
+        
+        // --- VARIABLES DE ESTADO ---
+        let gameRunning = false;
+        let speedLevel = 5; 
+        let jumpStreak = 0; 
+        let clearedObstacleThisJump = false; 
+        let jumpPoints = 0; 
+        let score = 0; 
+        let nextSpeedBoostScore = SCORE_BOOST_THRESHOLD; 
+        let lives = MAX_LIVES; 
+        let bgScrollX = 0;
+        let currentSpeed = 0; 
+        let framesSinceStart = 0; 
+        let activeDialogs = []; 
+        
+        let operario = { x: 0, y: 0, width: OPERARIO_WIDTH, height: OPERARIO_HEIGHT, velocityY: 0, isJumping: false };
+        let jefe = { x: 0, y: 0, width: JEFE_WIDTH, height: JEFE_HEIGHT };
+        let obstacles = [];
+        let crashState = { isCrashing: false, jefeAccelerating: false, timer: 0, CRASH_DURATION: 60 };
+        let animationFrameId = null; 
+        let scatteredObstacles = []; 
+        let JEFE_POSITIONS = {}; 
+
+
+        // --- CLASE DIALOG (Para Onomatopeyas) ---
+        class Dialog {
+            constructor(text, color, x, y, type) {
+                this.text = text;
+                this.color = color;
+                this.x = x;
+                this.y = y;
+                this.type = type; 
+                this.timer = DIALOG_DURATION_FRAMES;
+                
+                if (type === DIALOG_TYPE.LIFE_GAIN) {
+                    this.yVelocity = -1.0; 
+                } else if (type === DIALOG_TYPE.FAILURE) {
+                    this.yVelocity = -0.8;
+                } else {
+                    this.yVelocity = -0.5; 
+                }
+            }
+
+            update(factor) {
+                this.timer -= factor;
+                this.y += this.yVelocity * factor;
+            }
+
+            draw() {
+                const fontSize = this.type === DIALOG_TYPE.LIFE_GAIN ? 40 : 30;
+                ctx.font = `900 ${fontSize}px 'Bangers', cursive`; /* Usando Bangers para diálogos */
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                const alpha = Math.min(1.0, this.timer / (DIALOG_DURATION_FRAMES / 2));
+                
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                
+                ctx.shadowColor = '#000000';
+                ctx.shadowBlur = 4;
+                ctx.shadowOffsetX = 2;
+                ctx.shadowOffsetY = 2;
+
+                ctx.fillStyle = this.color;
+                ctx.fillText(this.text, this.x, this.y);
+                
+                ctx.restore();
+            }
+        }
+
+        // --- CLASE OBSTACLE ---
+
+        class Obstacle {
+            constructor(emoji) {
+                this.width = OBSTACLE_COLLISION_WIDTH;
+                this.height = OBSTACLE_COLLISION_HEIGHT;
+                this.x = canvas.width; 
+                this.y = canvas.height - FLOOR_Y - this.height; 
+                this.emoji = emoji;
+                this.hit = false;
+                this.passed = false;
+            }
+
+            draw() {
+                const fontSize = 40;
+                ctx.font = `${fontSize}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+                
+                ctx.save();
+                if (this.hit) { ctx.globalAlpha = 0.5; }
+                ctx.fillText(this.emoji, this.x + this.width / 2, canvas.height - FLOOR_Y - 5);
+                ctx.restore();
+            }
+        }
+
+
+        // --- ASSETS Y CARGA DE IMÁGENES ---
+        let operarioImg = new Image();
+        let jefeImg = new Image();
+        let estrelladoImg = new Image(); 
+        let backgroundImg = new Image();
+        let imagesLoaded = 0;
+        const TOTAL_IMAGES = 4; 
+        
+        function loadAssets() {
+            // Uso de URLs de imágenes proporcionadas o placeholders.
+            operarioImg.src = 'https://i.postimg.cc/25Y2CHFG/estrellita.png'; 
+            jefeImg.src = 'https://i.postimg.cc/mkkm0t3v/Felipe.png';      
+            estrelladoImg.src = 'https://i.postimg.cc/FssfX0LL/estrellado.png'; 
+            backgroundImg.src = 'https://i.postimg.cc/G3y7J1f4/1760641223769.png';
+
+            operarioImg.onerror = operarioImg.onload = imageLoaded;
+            jefeImg.onerror = jefeImg.onload = imageLoaded;
+            estrelladoImg.onerror = estrelladoImg.onload = imageLoaded;
+            backgroundImg.onerror = backgroundImg.onload = imageLoaded;
+
+            setTimeout(() => {
+                if (imagesLoaded < TOTAL_IMAGES) {
+                    console.error("Una o más imágenes fallaron en cargar. Forzando el inicio del juego.");
+                    imagesLoaded = TOTAL_IMAGES; 
+                    onAssetsReady();
+                }
+            }, 5000); 
+        }
+
+        function imageLoaded() {
+            imagesLoaded++;
+            if (imagesLoaded === TOTAL_IMAGES) {
+                onAssetsReady();
+            }
+        }
+        
+        function onAssetsReady() {
+            resizeCanvas();
+            showStartScreen(); 
+            window.addEventListener('resize', resizeCanvas);
+            setupControls();
+        }
+
+        // --- BUCLE PRINCIPAL E INICIALIZACIÓN ---
+
+        function calculateJefePositions() {
+            const operarioX = (canvas.width / 2) - (operario.width / 2); 
+            const JEFE_1_LIFE_X = operarioX - jefe.width + (operario.width - OBSTACLE_COLLISION_WIDTH); 
+            const VISIBLE_EDGE = 0; 
+            const JEFE_2_LIFE_X = VISIBLE_EDGE + (JEFE_1_LIFE_X - VISIBLE_EDGE) * 0.45; 
+            const JEFE_3_LIFE_X = VISIBLE_EDGE - (jefe.width * 0.1); 
+
+            JEFE_POSITIONS = {
+                3: JEFE_3_LIFE_X, 
+                2: JEFE_2_LIFE_X, 
+                1: JEFE_1_LIFE_X
+            };
+        }
+
+        function resizeCanvas() {
+            const container = document.getElementById('game-container');
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+
+            operario.x = (canvas.width / 2) - (operario.width / 2); 
+            operario.y = canvas.height - FLOOR_Y - operario.height;
+            jefe.y = canvas.height - FLOOR_Y - jefe.height;
+            
+            calculateJefePositions();
+
+            jefe.x = JEFE_POSITIONS[lives] || 0; 
+
+            if (gameState === GAME_STATE.RUNNING) {
+                obstacles = []; 
+            }
+        }
+
+        window.onload = function() {
+            loadAssets(); 
+        };
+
+        function startGame() {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+
+            gameState = GAME_STATE.RUNNING;
+            gameRunning = true;
+            
+            speedLevel = 5; 
+            jumpStreak = 0;
+            clearedObstacleThisJump = false; // Reinicio de bandera
+            jumpPoints = 0; 
+            score = 0; 
+            nextSpeedBoostScore = SCORE_BOOST_THRESHOLD; 
+            lives = MAX_LIVES; 
+            bgScrollX = 0;
+            currentSpeed = BASE_SPEED + (speedLevel - 5) * SPEED_INCREMENT_FACTOR; 
+            crashState = { isCrashing: false, jefeAccelerating: false, timer: 0, CRASH_DURATION: 60 };
+            framesSinceStart = 0; 
+            activeDialogs = []; 
+            
+            resizeCanvas(); 
+            operario.velocityY = 0;
+            operario.isJumping = false;
+            obstacles = [];
+            scatteredObstacles = []; 
+            
+            messageBox.classList.add('hidden');
+            gameHud.classList.remove('hidden');
+            
+            updateHUD(); 
+            
+            lastTimestamp = performance.now(); 
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        let lastTimestamp = 0;
+        function gameLoop(timestamp) {
+            if (gameState !== GAME_STATE.RUNNING && !crashState.isCrashing) return;
+
+            const deltaTime = timestamp - lastTimestamp; 
+            lastTimestamp = timestamp;
+            
+            const SAFE_DELTA = Math.min(deltaTime, 1000 / 30); 
+
+            updateGame(SAFE_DELTA);
+            drawRunningScene();
+
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        function updateGame(deltaTime) {
+            
+            const factor = deltaTime / (1000 / 60); 
+
+            // 1. Lógica de Crash Final
+            if (crashState.isCrashing) {
+                crashState.timer += factor;
+                if (crashState.jefeAccelerating) { 
+                    jefe.x = Math.min(jefe.x + currentSpeed * deltaTime * 6, operario.x + operario.width + 10);
+                }
+                
+                if (crashState.timer >= crashState.CRASH_DURATION) {
+                    gameOver('¡FELIPE TE QUEBRÓ!'); 
+                    return;
+                }
+                return; 
+            }
+            
+            framesSinceStart += factor;
+            
+            // 2. Calcular Velocidad Real
+            const speedDelta = (speedLevel - 5) * SPEED_INCREMENT_FACTOR;
+            currentSpeed = BASE_SPEED + speedDelta; 
+            
+            // 3. Movimiento del Operario (Salto)
+            if (operario.isJumping) {
+                operario.y += operario.velocityY * deltaTime;
+                operario.velocityY += GRAVITY_BASE * deltaTime; 
+                
+                if (operario.y >= canvas.height - FLOOR_Y - operario.height) {
+                    // Aterrizaje
+                    operario.y = canvas.height - FLOOR_Y - operario.height;
+                    operario.isJumping = false;
+                    operario.velocityY = 0;
+                    
+                    // Reinicio de Racha Condicional
+                    if (!clearedObstacleThisJump) {
+                        jumpStreak = 0; 
+                    }
+                    // La bandera siempre se reinicia al aterrizar para el siguiente salto
+                    clearedObstacleThisJump = false; 
+                    updateHUD();
+                }
+            }
+            
+            // 4. Posición del Jefe (Basada en Vidas)
+            const targetJefeX = JEFE_POSITIONS[lives];
+            if (jefe.x !== targetJefeX) {
+                const diff = targetJefeX - jefe.x;
+                jefe.x += diff * 0.25 * factor; 
+            }
+
+
+            // 5. Movimiento de Obstáculos, Colisión y Recompensa
+            const distanceMoved = currentSpeed * deltaTime; 
+
+            obstacles.forEach(obstacle => {
+                obstacle.x -= distanceMoved; 
+                
+                // Colisión (Pérdida de Vida)
+                if (!obstacle.hit && checkCollision(operario, obstacle)) {
+                    obstacle.hit = true;
+                    
+                    showDialog(FAILURE_DIALOG, '#D32F2F', DIALOG_TYPE.FAILURE);
+                    
+                    lives = Math.max(0, lives - 1); 
+                    jumpStreak = 0; 
+                    clearedObstacleThisJump = false; // Se rompe la racha si choca
+                    
+                    if (lives <= 0) {
+                        crashState.isCrashing = true;
+                        crashState.jefeAccelerating = true;
+                    }
+                    updateHUD();
+                }
+
+                // Pasó el Obstáculo (Ganancia de Puntos/Racha)
+                if (!obstacle.passed && obstacle.x + obstacle.width < operario.x) {
+                    obstacle.passed = true;
+                    if (!obstacle.hit) {
+                        
+                        jumpPoints++;
+                        score += SCORE_REWARD;
+                        
+                        // Si pasó el obstáculo, marca que fue un salto exitoso
+                        clearedObstacleThisJump = true; 
+
+                        // Aumentamos la racha solo si la colisión fue evitada con éxito
+                        jumpStreak++;
+                        
+                        // LÓGICA DE AUMENTO DE VELOCIDAD
+                        // Comprueba si score ha superado el próximo umbral (múltiplo de 50)
+                        if (score >= nextSpeedBoostScore) {
+                            speedLevel = Math.min(MAX_SPEED_LEVEL, speedLevel + SPEED_LEVEL_INCREASE); 
+                            nextSpeedBoostScore += SCORE_BOOST_THRESHOLD; // El siguiente umbral es +50
+                        }
+                        
+                        // LÓGICA DE RECUPERAR VIDA (Solo si lives < MAX_LIVES)
+                        if (jumpStreak >= LIVES_REQUIRED_FOR_BONUS) { 
+                            if (lives < MAX_LIVES) { 
+                                lives = Math.min(MAX_LIVES, lives + 1);
+                                showDialog(LIFE_GAIN_DIALOG, '#4CAF50', DIALOG_TYPE.LIFE_GAIN); 
+                            } else {
+                                const randomMsg = SUCCESS_DIALOGS[Math.floor(Math.random() * SUCCESS_DIALOGS.length)];
+                                showDialog(randomMsg, '#FFEB3B', DIALOG_TYPE.SUCCESS); 
+                            }
+                            jumpStreak = 0; // Reinicia la racha 
+                        } else {
+                            // Si solo es un salto exitoso, mostramos el diálogo normal de éxito
+                            const randomMsg = SUCCESS_DIALOGS[Math.floor(Math.random() * SUCCESS_DIALOGS.length)];
+                            showDialog(randomMsg, '#FFEB3B', DIALOG_TYPE.SUCCESS); 
+                        }
+
+                    }
+                    updateHUD();
+                }
+            });
+
+            // Limpiar y generar obstáculos
+            obstacles = obstacles.filter(o => o.x + OBSTACLE_COLLISION_WIDTH > 0);
+            
+            // Lógica de Aparición
+            if (framesSinceStart >= INITIAL_SPAWN_DELAY_FRAMES) {
+                const minDistanceToSpawn = 350 + Math.random() * 300; 
+                if (obstacles.length === 0 || (canvas.width - obstacles[obstacles.length - 1].x) >= minDistanceToSpawn) {
+                    generateObstacle();
+                }
+            }
+            
+            // 6. Actualizar Diálogos
+            activeDialogs = activeDialogs.filter(d => d.timer > 0);
+            activeDialogs.forEach(d => d.update(factor));
+
+            // 7. Fondo Parallax
+            bgScrollX -= distanceMoved * 0.5; 
+        }
+        
+        // --- FUNCIÓN PARA ACTUALIZAR EL HUD ---
+        function updateHUD() {
+            const lifeBar = LIFE_EMOJI.repeat(lives);
+            jumpPointsDisplay.textContent = `📦 x ${jumpPoints} | ${lifeBar}`;
+            scoreDisplay.textContent = `💰 ${score.toFixed(0)}`; 
+
+            const isDanger = lives === 1;
+            gameHud.style.color = isDanger ? '#EF5350' : '#FFC107'; 
+        }
+
+        // --- FUNCIÓN PARA MOSTRAR DIÁLOGO ---
+        function showDialog(text, color, type) {
+            let x, y;
+            
+            if (type === DIALOG_TYPE.FAILURE) {
+                x = jefe.x + jefe.width / 2;
+                y = jefe.y - 10; 
+            } else {
+                x = operario.x + operario.width / 2;
+                y = operario.y - 20; 
+            }
+
+            activeDialogs.push(new Dialog(text, color, x, y, type));
+        }
+        
+        // --- FUNCIÓN DE DIBUJO PARA LA PANTALLA EN MOVIMIENTO (Caja 2) ---
+        function drawRunningScene() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Dibujar Fondo Looping (Parallax)
+            if (backgroundImg.complete && backgroundImg.naturalWidth > 0) {
+                const totalScroll = bgScrollX % backgroundImg.width; 
+                for (let i = -1; i < 2; i++) {
+                    ctx.drawImage(backgroundImg, totalScroll + i * backgroundImg.width, 0, backgroundImg.width, canvas.height - FLOOR_Y);
+                }
+            }
+
+            // 2. Dibujar Suelo
+            ctx.fillStyle = '#606c88'; 
+            ctx.fillRect(0, canvas.height - FLOOR_Y, canvas.width, FLOOR_Y);
+            ctx.fillStyle = '#FF9800'; 
+            ctx.fillRect(0, canvas.height - FLOOR_Y, canvas.width, 5); 
+            
+            // 3. Dibujar JEFE
+            if (jefeImg.complete) { 
+                ctx.globalAlpha = 1.0; 
+                ctx.drawImage(jefeImg, Math.round(jefe.x), jefe.y, jefe.width, jefe.height); 
+            }
+
+            // 4. Dibujar Obstáculos
+            obstacles.forEach(obstacle => obstacle.draw());
+
+            // 5. Dibujar OPERARIO
+            let currentOperarioImg = operarioImg;
+            if (crashState.isCrashing && estrelladoImg.complete) {
+                currentOperarioImg = estrelladoImg;
+            } else {
+                const isDanger = lives === 1;
+                if (isDanger && Math.floor(lastTimestamp / 150) % 2 === 0) {
+                    ctx.globalAlpha = 0.6;
+                }
+            }
+            
+            if (currentOperarioImg.complete) {
+                ctx.drawImage(currentOperarioImg, operario.x, operario.y, operario.width, operario.height);
+                ctx.globalAlpha = 1.0; 
+            }
+            
+            // 6. Dibujar Diálogos
+            activeDialogs.forEach(d => d.draw());
+        }
+        
+        // --- FUNCIÓN DE DIBUJO PARA EL MENÚ (Caja 1) ---
+        function drawMenuScene() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#4A5568'; 
+            ctx.fillRect(0, 0, canvas.width, canvas.height - FLOOR_Y);
+            
+            // Suelo
+            ctx.fillStyle = '#606c88'; 
+            ctx.fillRect(0, canvas.height - FLOOR_Y, canvas.width, FLOOR_Y);
+            ctx.fillStyle = '#FF9800'; 
+            ctx.fillRect(0, canvas.height - FLOOR_Y, canvas.width, 5); 
+        }
+
+        // --- FUNCIÓN DE DIBUJO PARA EL GAME OVER (Caja 3) ---
+        function drawGameOverScene() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Fondo
+            if (backgroundImg.complete && backgroundImg.naturalWidth > 0) {
+                const totalScroll = bgScrollX % backgroundImg.width; 
+                for (let i = -1; i < 2; i++) {
+                    ctx.drawImage(backgroundImg, totalScroll + i * backgroundImg.width, 0, backgroundImg.width, canvas.height - FLOOR_Y);
+                }
+            }
+            
+            // Suelo
+            ctx.fillStyle = '#606c88'; 
+            ctx.fillRect(0, canvas.height - FLOOR_Y, canvas.width, FLOOR_Y);
+            ctx.fillStyle = '#FF9800'; 
+            ctx.fillRect(0, canvas.height - FLOOR_Y, canvas.width, 5); 
+
+            // Escombros
+            if (scatteredObstacles.length > 0) {
+                scatteredObstacles.forEach(item => {
+                    const fontSize = item.size || 40;
+                    ctx.font = `${fontSize}px sans-serif`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText(item.emoji, item.x, item.y);
+                });
+            }
+
+            // JEFE (En posición de victoria)
+            if (jefeImg.complete) { 
+                const victoryX = operario.x + operario.width + 10;
+                const victoryY = canvas.height - FLOOR_Y - jefe.height;
+                ctx.drawImage(jefeImg, victoryX, victoryY, jefe.width, jefe.height); 
+            }
+
+            // OPERARIO Estrellado 
+            if (estrelladoImg.complete) {
+                ctx.drawImage(estrelladoImg, operario.x, operario.y, operario.width, operario.height);
+            }
+        }
+        
+        // --- FUNCIONES DE CONTROL DE PANTALLA ---
+
+        // Caja 1 (MENÚ)
+        function showStartScreen() {
+            gameState = GAME_STATE.MENU;
+            gameRunning = false;
+            gameHud.classList.add('hidden');
+            
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+            
+            messageText.textContent = 'CORRE FELIPE CORRE!!!'; // Título de cómic
+            startGameButton.textContent = '¡PA LOS TOGOS!'; // Botón sin explicación extra
+            
+            startGameButton.classList.remove('hidden');
+            messageBox.classList.remove('hidden');
+            
+            lives = MAX_LIVES; 
+            resizeCanvas(); 
+            drawMenuScene(); 
+        }
+
+        // Caja 3 (GAME OVER)
+        function gameOver(title) {
+            gameRunning = false;
+            gameState = GAME_STATE.GAMEOVER;
+            gameHud.classList.add('hidden');
+            
+            // Generar escombros
+            scatteredObstacles = obstacles.map(o => ({ x: o.x, y: canvas.height - FLOOR_Y - 5, emoji: o.emoji, size: 40 })).slice(-10);
+            
+            if (scatteredObstacles.length === 0) {
+                 for (let i = 0; i < 5; i++) {
+                    const emoji = EMOJI_OBSTACLES[Math.floor(Math.random() * EMOJI_OBSTACLES.length)];
+                    scatteredObstacles.push({ 
+                        x: operario.x + Math.random() * operario.width - 20, 
+                        y: canvas.height - FLOOR_Y - 5, 
+                        emoji: emoji, 
+                        size: 40 
+                    });
+                }
+            }
+            
+            messageText.textContent = `${title} (Puntaje: 💰 ${score.toFixed(0)})`; 
+            
+            startGameButton.classList.add('hidden');
+            messageBox.classList.remove('hidden');
+            
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+
+            drawGameOverScene(); 
+
+            setTimeout(() => {
+                if (gameState === GAME_STATE.GAMEOVER) {
+                    showStartScreen(); 
+                }
+            }, 3000); 
+        }
+        
+        // --- CONTROLADORES DE EVENTOS / UTILIDADES ---
+        
+        function handleJump() {
+            if (!operario.isJumping && gameRunning) {
+                operario.isJumping = true;
+                operario.velocityY = JUMP_VELOCITY_BASE; 
+                clearedObstacleThisJump = false; // Resetear la bandera al inicio de cada salto
+            }
+        }
+
+        function generateObstacle() {
+            const randomIndex = Math.floor(Math.random() * EMOJI_OBSTACLES.length);
+            const emoji = EMOJI_OBSTACLES[randomIndex];
+            obstacles.push(new Obstacle(emoji));
+        }
+        
+        function checkCollision(objA, objB) {
+            const operarioCollisionY = objA.y + objA.height - OPERARIO_COLLISION_HEIGHT;
+            
+            return objA.x < objB.x + objB.width &&
+                   objA.x + objA.width > objB.x &&
+                   operarioCollisionY < objB.y + objB.height &&
+                   objA.y + objA.height > objB.y; 
+        }
+
+        function setupControls() {
+            const jumpArea = document.getElementById('jump-area');
+
+            jumpArea.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                handleJump();
+            }, { passive: false });
+            
+            jumpArea.addEventListener('mousedown', handleJump);
+            startGameButton.addEventListener('click', startGame); 
+        }
+
+    </script>
+</body>
+</html>
